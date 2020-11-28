@@ -5,17 +5,11 @@ logger = logging.getLogger(__name__)
 print(__name__)
 import asyncio
 import websockets
-
-
 import json
-
-
 
 class Robot:
 
     GAME_PORT=6970
-
-    MAX_BUFFERED_MESSAGES = 1000
 
     # Maximum time given to the game to acknowledge the
     # commands
@@ -35,7 +29,6 @@ class Robot:
         self._msgs_to_game = asyncio.Queue()
 
         self._responses_from_game = asyncio.Queue()
-        self._msgs_from_game = asyncio.Queue(maxsize = self.MAX_BUFFERED_MESSAGES)
 
         self._last_response = asyncio.Queue(maxsize=1)
 
@@ -45,6 +38,12 @@ class Robot:
     async def run(self):
         logger.warning("You need to override Robot.run!")
         return
+
+    async def on_robot_update(self, data):
+        """Called everytime new data is received from the robot. Override
+           this method to process the data.
+        """
+        logger.debug(f"Received game-initiated msg: {data}")
 
     def start(self):
         self._event_loop = asyncio.get_event_loop()
@@ -107,11 +106,7 @@ class Robot:
                 if cmd_id > 0: # this the response to a previous cmd
                     self._responses_from_game.put_nowait(msg)
                 else: # cmd_id <= 0 -> msg initiated by the game
-                    logger.info(f"Recevied game-initiated msg: {msg}")
-
-                    if self._msgs_from_game.full():
-                        self._msgs_from_game.get_nowait()
-                    self._msgs_from_game.put_nowait(msg)
+                    await self.on_robot_update(msg[1])
 
     async def _handler(self, websocket, path):
         logger.info("Game connected")
