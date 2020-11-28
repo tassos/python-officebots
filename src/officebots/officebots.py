@@ -28,6 +28,8 @@ class Robot:
     CMD_ID_ERROR = [ERROR, "server response lost! (likely network issue)"]
 
     def __init__(self):
+        self._event_loop = None
+
         self._cmd_id = 1
 
         self._msgs_to_game = asyncio.Queue()
@@ -38,29 +40,28 @@ class Robot:
         self._last_response = asyncio.Queue(maxsize=1)
 
     def stop(self):
-        asyncio.get_event_loop().stop()
+        self._event_loop.stop()
 
     async def run(self):
-        logging.warning("You need to override Robot.run!")
+        logger.warning("You need to override Robot.run!")
         return
 
     def start(self):
-        asyncio.get_event_loop().set_exception_handler(self._handle_exception)
+        self._event_loop = asyncio.get_event_loop()
 
-        asyncio.get_event_loop().run_until_complete(
+        self._event_loop.set_exception_handler(self._handle_exception)
+
+        self._event_loop.run_until_complete(
                         websockets.serve(self._handler, "localhost", self.GAME_PORT)
                         )
 
         logger.info("Started OfficeBots Python API, listening for the game to connect on localhost:%s"% self.GAME_PORT)
 
         try:
-            asyncio.get_event_loop().run_until_complete(self.run())
+            self._event_loop.run_until_complete(self.run())
         except RuntimeError as re: # Event loop stopped before Future completed
-            logging.error("Robot controller interrupted due to game disconnection")
-            logging.error("Exception: %s" % str(re))
-
-        # probably not needed, as long as controller does not return!
-        #asyncio.get_event_loop().run_forever()
+            logger.error("Robot controller interrupted due to game disconnection")
+            logger.error("Exception: %s" % str(re))
 
     async def execute(self, cmd):
 
