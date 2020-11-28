@@ -4,14 +4,12 @@ import logging
 logging.basicConfig(level=logging.INFO)
 
 import sys
-import tty
-import termios
+import termios, fcntl, os
 
 import asyncio
-
 from officebots import Robot
 
-logging.getLogger('officebots').setLevel(logging.DEBUG)
+logging.getLogger('officebots').setLevel(logging.WARNING)
 
 if len(sys.argv) < 2:
     print("Usage: %s <robot name>" % sys.argv[0])
@@ -19,12 +17,49 @@ if len(sys.argv) < 2:
 
 name = sys.argv[1]
 
+attrs_save = None
+flags_save = None
+fd = sys.stdin.fileno()
 
 ARROW_UP = "up"
 ARROW_DOWN = "down"
 ARROW_RIGHT = "right"
 ARROW_LEFT = "left"
+KEY_ESC = chr(27)
 
+def configure_keyboard():
+    """
+    set keyboard to read single chars lookahead only
+    """
+    global attrs_save, flags_save
+
+    # save old state
+    flags_save = fcntl.fcntl(fd, fcntl.F_GETFL)
+    attrs_save = termios.tcgetattr(fd)
+    # make raw - the way to do this comes from the termios(3) man page.
+    attrs = list(attrs_save) # copy the stored version to update
+    # iflag
+    attrs[0] &= ~(termios.IGNBRK | termios.BRKINT | termios.PARMRK
+                  | termios.ISTRIP | termios.INLCR | termios. IGNCR
+                  | termios.ICRNL | termios.IXON )
+    # oflag
+    attrs[1] &= ~termios.OPOST
+    # cflag
+    attrs[2] &= ~(termios.CSIZE | termios. PARENB)
+    attrs[2] |= termios.CS8
+    # lflag
+    attrs[3] &= ~(termios.ECHONL | termios.ECHO | termios.ICANON
+                  | termios.ISIG | termios.IEXTEN)
+    termios.tcsetattr(fd, termios.TCSANOW, attrs)
+    # turn off non-blocking
+    fcntl.fcntl(fd, fcntl.F_SETFL, flags_save & ~os.O_NONBLOCK)
+
+def restore_keyboard():
+    """
+    restore previous keyboard settings
+    """
+    termios.tcsetattr(fd, termios.TCSAFLUSH, attrs_save)
+    fcntl.fcntl(fd, fcntl.F_SETFL, flags_save)
 
 def get_keypress():
     """
@@ -32,25 +67,35 @@ def get_keypress():
     Read max 1 chars from look ahead.
     Process as well common ANSI escape sequences for arrows.
     """
-    key = sys.stdin.read(1)
+    ret = []
 
-    if key:
-        if ord(key) == 27: # ESC!
-            sys.stdin.read(1) # we expect a [ here (ANSI CSI sequence)
-            ansicode = sys.stdin.read(1)
+    ret.append(sys.stdin.read(1)) # returns a single character
+    fcntl.fcntl(fd, fcntl.F_SETFL, flags_save | os.O_NONBLOCK)
+    c = sys.stdin.read(1) # returns a single character
+    while len(c) > 0:
+        ret.append(c)
+        c = sys.stdin.read(1)
 
-            if ansicode == "A":
-                return ARROW_UP
-            elif ansicode == "B":
-                return ARROW_DOWN
-            elif ansicode == "C":
-                return ARROW_RIGHT
-            elif ansicode == "D":
-                return ARROW_LEFT
-            else: # return ESC
-                return key
+    if ret[0]:
+        if ord(ret[0]) == 3: # Ctrl+C
+            raise KeyboardInterrupt()
 
-        return key
+        if ret[0] == KEY_ESC: # ESC!
+            if len(ret) == 3:
+                ansicode = ret[2] 
+
+                if ansicode == "A":
+                    return ARROW_UP
+                elif ansicode == "B":
+                    return ARROW_DOWN
+                elif ansicode == "C":
+                    return ARROW_RIGHT
+                elif ansicode == "D":
+                    return ARROW_LEFT
+                else: # return ESC
+                    return ret[0]
+
+        return ret[0]
 
 
 
@@ -68,30 +113,30 @@ class MyRobot(Robot):
             key = get_keypress()
 
             if key:
-                if key == ARROW_UP:
-                    v += 0.1
-                elif key == ARROW_DOWN:
-                    v -= 0.1
-                elif key == ARROW_LEFT:
-                    w += 0.1
-                elif key == ARROW_RIGHT:
-                    w -= 0.1
-                elif ord(key) == 27:
-                    print("Exiting")
+                if key == KEY_ESC:
                     self.stop()
                     break
+                if key == ARROW_UP:
+                    v = 0.6
+                if key == ARROW_DOWN:
+                    v = -0.6
+                if key == ARROW_LEFT:
+                    w = 0.8
+                if key == ARROW_RIGHT:
+                    w = -0.8
+            else:
+                v = 0
+                w = 0
 
-                if (v != old_v) or (w != old_w):
-                    await self.execute([name, "cmd-vel", [v, w]])
-                    old_v = v
-                    old_w = w
+            if (v != old_v) or (w != old_w):
+                await self.execute([name, "cmd-vel", [v, w]])
+                old_v = v
+                old_w = w
 
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.01)
 
-
-orig_settings = termios.tcgetattr(sys.stdin)
-tty.setcbreak(sys.stdin)
+configure_keyboard()
 
 MyRobot().start()
 
-termios.tcsetattr(sys.stdin, termios.TCSADRAIN, orig_settings)
+restore_keyboard()
