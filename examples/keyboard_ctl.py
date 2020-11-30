@@ -102,7 +102,13 @@ def get_keypress():
 class MyRobot(Robot):
 
 
+    async def on_robot_update(self, data):
+        #print(data)
+        pass
+
     async def run(self):
+
+        await self.execute([name, "create"])
 
         v = old_v = 0.
         w = old_w = 0.
@@ -117,9 +123,9 @@ class MyRobot(Robot):
                     self.stop()
                     break
                 if key == ARROW_UP:
-                    v = 0.6
+                    v = 1.0
                 if key == ARROW_DOWN:
-                    v = -0.6
+                    v = -0.8
                 if key == ARROW_LEFT:
                     w = 0.8
                 if key == ARROW_RIGHT:
