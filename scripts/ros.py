@@ -5,6 +5,7 @@ logger = logging.getLogger(f'rosout.{__name__}')
 
 import sys
 import asyncio
+import time
 
 from officebots import Robot
 
@@ -19,8 +20,20 @@ from sensor_msgs.msg import LaserScan
 
 import tf
 
+
+argv = rospy.myargv(argv=sys.argv)
+
+if len(argv) < 2:
+    print("Usage: %s <robot name>" % argv[0])
+    sys.exit(1)
+
+robot_name = argv[1]
+
+
 def restore_logging():
-    officebots_logger.addHandler(logging.StreamHandler())
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter('[%(levelname)s] %(asctime)s - %(name)s: %(message)s'))
+    officebots_logger.addHandler(handler)
     officebots_logger.setLevel(logging.DEBUG)
 
 class RosOfficeBots(Robot):
@@ -61,8 +74,17 @@ class RosOfficeBots(Robot):
         self.scan_msg.range_max = self.range_max
 
 
+        self.last = time.time()
+
     async def run(self):
-        logger.info("Starting")
+        res = await self.execute([robot_name, "create"])
+        if res[0] != self.OK:
+            logger.warning(res[1])
+        else:
+            logger.info(f"Created the robot {robot_name}")
+
+        logger.info("ROS Officebots bridge ready")
+
         # simply keeps python from exiting until this node is stopped
         while not rospy.is_shutdown():
             await asyncio.sleep(0.1)
