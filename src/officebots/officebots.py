@@ -2,7 +2,6 @@
 
 import logging
 logger = logging.getLogger(__name__)
-print(__name__)
 import asyncio
 import websockets
 import json
@@ -54,7 +53,9 @@ class Robot:
                         websockets.serve(self._handler, "localhost", self.GAME_PORT)
                         )
 
-        logger.info("Started OfficeBots Python API, listening for the game to connect on localhost:%s"% self.GAME_PORT)
+        logger.info("Started OfficeBots Python API")
+        logger.info("Waiting for the game to connect on localhost:%s"% self.GAME_PORT)
+        logger.info("Press the blue icon in the game to connect")
 
         try:
             self._event_loop.run_until_complete(self.run())
@@ -68,7 +69,7 @@ class Robot:
         self._msgs_to_game.put_nowait((self._cmd_id, cmd))
         self._cmd_id += 1
 
-        logger.debug("Waiting for response...")
+        #logger.debug("Waiting for response...")
         return await self._last_response.get()
 
 

@@ -57,11 +57,13 @@ class RosOfficeBots(Robot):
         self.odom_msg.pose.pose.orientation.y = 0.
 
         # laser scan parameters
-        self.angle_min = -45. * pi/180
-        self.angle_max = 46. * pi/180
-        self.angle_increment = 2. * pi/180
+
+        nb_rays = 50
+        self.angle_increment = pi/(nb_rays - 1)
+        self.angle_min = -pi/2
+        self.angle_max = pi/2
         self.range_min = 0. #m
-        self.range_max = 60. #m
+        self.range_max = 20. #m
 
         self.scan_pub = rospy.Publisher('scan', LaserScan, queue_size=1)
         self.scan_msg = LaserScan()
@@ -94,6 +96,10 @@ class RosOfficeBots(Robot):
 
     async def on_robot_update(self, data):
 
+        now = time.time()
+        dt = now - self.last
+        self.last = now
+
         x, y, theta, v, w = data["odom"]
 
         qx,qy,qz,qw = tf.transformations.quaternion_from_euler(0, 0, theta)
@@ -117,10 +123,11 @@ class RosOfficeBots(Robot):
                                self.base_frame,
                                "odom")
 
-        #self.scan_msg.scan_time = dt
-        #self.scan_msg.ranges = self.ranges
+        self.scan_msg.scan_time = dt
+        self.scan_msg.ranges = data["laserscan"]
+        self.scan_msg.header.stamp = rospy.Time.now() 
 
-        #self.scan_pub.publish(self.scan_msg)
+        self.scan_pub.publish(self.scan_msg)
 
 
     def on_cmd_vel(self, twist):
@@ -130,5 +137,6 @@ class RosOfficeBots(Robot):
         self._event_loop.create_task(self.execute(["WallE", "cmd-vel", [x,w]]))
 
 if __name__ == '__main__':
+
     RosOfficeBots().start()
 
