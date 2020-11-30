@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="officebots",
-    version="0.0.1",
+    version="0.1.0",
     author="Séverin Lemaignan",
     author_email="severin.lemaignan@brl.ac.uk",
     description="Python API for the OfficeBots game",
@@ -14,6 +14,7 @@ setuptools.setup(
     url="https://git.brl.ac.uk/s-lemaignan/officebots-python",
     package_dir = {"":"src"},
     packages=["officebots"],
+    scripts = ["scripts/officebots-ros"],
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
