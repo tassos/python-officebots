@@ -124,8 +124,15 @@ class Robot:
             task.cancel()
 
     def _handle_exception(self, loop, context):
-        msg = context.get("exception", context["message"])
-        logger.error(f"Caught exception: {msg}")
-        logger.info("Connection closed by the game (game stopped?). Exiting.")
-        loop.stop()
+        msg = context.get("exception", None)
+        if msg:
+            if type(msg) == asyncio.exceptions.TimeoutError:
+                logger.error(f"The server did not answer our command! (timeout)")
+                loop.stop()
+            else:
+                raise msg
+        else:
+            logger.error(f"Caught exception: {context['message']}")
+            logger.info("Connection closed by the game (game stopped?). Exiting.")
+            loop.stop()
 
