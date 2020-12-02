@@ -66,6 +66,8 @@ class Robot:
     async def execute(self, cmd):
 
         self.last_reponse = None
+        if len(cmd) == 2: # no params? add an empty param list
+            cmd.append([])
         self._msgs_to_game.put_nowait((self._cmd_id, cmd))
         self._cmd_id += 1
 
