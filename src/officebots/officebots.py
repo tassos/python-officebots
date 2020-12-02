@@ -100,7 +100,9 @@ class Robot:
         #break
 
     async def _recv_msgs(self, websocket, path):
-        async for msg in websocket:
+        #async for msg in websocket:
+        while True:
+            msg = await websocket.recv()
             #logger.info(msg)
             if msg != "ack".encode():
                 msg = json.loads(msg)
@@ -128,7 +130,7 @@ class Robot:
     def _handle_exception(self, loop, context):
         msg = context.get("exception", None)
         if msg:
-            if type(msg) == asyncio.exceptions.TimeoutError:
+            if hasattr(asyncio, 'exceptions') and type(msg) == asyncio.exceptions.TimeoutError:
                 logger.error(f"The server did not answer our command! (timeout)")
                 loop.stop()
             else:
