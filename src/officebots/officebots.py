@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
 
 import logging
+
 logger = logging.getLogger(__name__)
 import asyncio
 import websockets
 import json
 
+
 class Robot:
 
-    GAME_PORT=6970
+    GAME_PORT = 6970
 
     # Maximum time given to the game to acknowledge the
     # commands
-    TIMEOUT=2 #s
+    TIMEOUT = 10  # s
 
     OK = "OK"
     ERROR = "EE"
@@ -31,6 +33,8 @@ class Robot:
 
         self._last_response = asyncio.Queue(maxsize=1)
 
+        self.multipart_content = {}
+
     def stop(self):
         self._event_loop.stop()
 
@@ -40,7 +44,7 @@ class Robot:
 
     async def on_robot_update(self, data):
         """Called everytime new data is received from the robot. Override
-           this method to process the data.
+        this method to process the data.
         """
         logger.debug(f"Received game-initiated msg: {data}")
 
@@ -50,30 +54,29 @@ class Robot:
         self._event_loop.set_exception_handler(self._handle_exception)
 
         self._event_loop.run_until_complete(
-                        websockets.serve(self._handler, "localhost", self.GAME_PORT)
-                        )
+            websockets.serve(self._handler, "localhost", self.GAME_PORT)
+        )
 
         logger.info("Started OfficeBots Python API")
-        logger.info("Waiting for the game to connect on localhost:%s"% self.GAME_PORT)
+        logger.info("Waiting for the game to connect on localhost:%s" % self.GAME_PORT)
         logger.info("Press the blue icon in the game to connect")
 
         try:
             self._event_loop.run_until_complete(self.run())
-        except RuntimeError as re: # Event loop stopped before Future completed
+        except RuntimeError as re:  # Event loop stopped before Future completed
             logger.error("Robot controller interrupted due to game disconnection")
             logger.error("Exception: %s" % str(re))
 
     async def execute(self, cmd):
 
         self.last_reponse = None
-        if len(cmd) == 2: # no params? add an empty param list
+        if len(cmd) == 2:  # no params? add an empty param list
             cmd.append([])
         self._msgs_to_game.put_nowait((self._cmd_id, cmd))
         self._cmd_id += 1
 
-        #logger.debug("Waiting for response...")
+        # logger.debug("Waiting for response...")
         return await self._last_response.get()
-
 
     async def _send_cmd(self, websocket, path):
         while True:
@@ -82,36 +85,76 @@ class Robot:
             logger.debug("Sending to server %s" % str(cmd))
             await websocket.send(json.dumps(msg))
             try:
-                response_id, response = await asyncio.wait_for(self._responses_from_game.get(), timeout=self.TIMEOUT)
+                response_id, response = await asyncio.wait_for(
+                    self._responses_from_game.get(), timeout=self.TIMEOUT
+                )
             except TimeoutError:
-                logger.error(f"Game timeout while waiting for response to cmd <%s>!" % cmd)
+                logger.error(
+                    f"Game timeout while waiting for response to cmd <%s>!" % cmd
+                )
                 self._last_response.put_nowait(self.TIMEOUT_ERROR)
-
 
             if response_id == cmd_id:
                 logger.debug(f"Game responded: %s" % response)
+
                 self._last_response.put_nowait(response)
             else:
-                logger.error("Wrong command id! The game response to <%s> was lost somewhere!" % cmd)
+                logger.error(
+                    "Wrong command id %s! The game response to <%s> (id: %s) was lost somewhere!"
+                    % (response_id, cmd, cmd_id)
+                )
                 self._last_response.put_nowait(self.CMD_ID_ERROR)
 
-
-
-        #break
+        # break
 
     async def _recv_msgs(self, websocket, path):
-        #async for msg in websocket:
+
+        # async for msg in websocket:
         while True:
             msg = await websocket.recv()
-            #logger.info(msg)
-            if msg != "ack".encode():
+            # logger.info(msg)
+            if msg[:9] == b"MULTIPART":
+                idx = int(msg[9:14])
+                id, nb_chunks, total_chunks, content = self.multipart_content[idx]
+                nb_chunks += 1
+                logger.warn("Got chunk %s of %s" % (nb_chunks, total_chunks))
+                content += msg[14:]
+
+                if nb_chunks == total_chunks:
+                    logger.warn("End of multipart content")
+                    self._responses_from_game.put_nowait(
+                        [
+                            id,
+                            ["OK", content],
+                        ]
+                    )
+                    del self.multipart_content[idx]
+                else:
+                    self.multipart_content[idx] = (id, nb_chunks, total_chunks, content)
+
+            elif msg != "ack".encode():
                 msg = json.loads(msg)
 
                 cmd_id = msg[0]
-                if cmd_id > 0: # this the response to a previous cmd
-                    self._responses_from_game.put_nowait(msg)
-                else: # cmd_id <= 0 -> msg initiated by the game
-                    await self.on_robot_update(msg[1])
+                if cmd_id > 0:  # this the response to a previous cmd
+
+                    status, content = msg[1]
+                    if status == "MULTIPART":
+                        logger.warn("Start multipart content")
+                        multipart_id, nb_chunks = content
+                        self.multipart_content[multipart_id] = (
+                            cmd_id,
+                            0,
+                            nb_chunks,
+                            bytes(),
+                        )
+
+                    else:
+                        self._responses_from_game.put_nowait(
+                            [cmd_id, [status, json.loads(content)]]
+                        )
+                else:  # cmd_id <= 0 -> msg initiated by the game
+                    await self.on_robot_update(msg)
 
     async def _handler(self, websocket, path):
         logger.info("Game connected")
@@ -120,8 +163,8 @@ class Robot:
         producer_task = asyncio.ensure_future(self._send_cmd(websocket, path))
 
         done, pending = await asyncio.wait(
-                [consumer_task, producer_task],
-                return_when=asyncio.FIRST_COMPLETED,
+            [consumer_task, producer_task],
+            return_when=asyncio.FIRST_COMPLETED,
         )
 
         for task in pending:
@@ -130,7 +173,10 @@ class Robot:
     def _handle_exception(self, loop, context):
         msg = context.get("exception", None)
         if msg:
-            if hasattr(asyncio, 'exceptions') and type(msg) == asyncio.exceptions.TimeoutError:
+            if (
+                hasattr(asyncio, "exceptions")
+                and type(msg) == asyncio.exceptions.TimeoutError
+            ):
                 logger.error(f"The server did not answer our command! (timeout)")
                 loop.stop()
             else:
@@ -139,4 +185,3 @@ class Robot:
             logger.error(f"Caught exception: {context['message']}")
             logger.info("Connection closed by the game (game stopped?). Exiting.")
             loop.stop()
-
