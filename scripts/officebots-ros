@@ -146,7 +146,7 @@ class RosOfficeBots(Robot):
         x = twist.linear.x
         w = twist.angular.z
 
-        self._event_loop.create_task(self.execute(["WallE", "cmd-vel", [x, w]]))
+        self._event_loop.create_task(self.execute([robot_name, "cmd-vel", [x, w]]))
 
 
 if __name__ == "__main__":
