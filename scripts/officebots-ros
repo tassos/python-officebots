@@ -22,6 +22,10 @@ import rospy
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import LaserScan, Image
+from hri_msgs.msg import IdsList, LiveSpeech
+from std_msgs.msg import String, Float32
+
+import random
 
 import tf
 
@@ -35,13 +39,17 @@ if len(argv) < 2:
 robot_name = argv[1]
 
 
+def random_id():
+    return "".join(random.choices("abcdefghijklmnopqrstuvxyz", k=5))
+
+
 def restore_logging():
     handler = logging.StreamHandler()
     handler.setFormatter(
         logging.Formatter("[%(levelname)s] %(asctime)s - %(name)s: %(message)s")
     )
     officebots_logger.addHandler(handler)
-    officebots_logger.setLevel(logging.DEBUG)
+    officebots_logger.setLevel(logging.INFO)
 
 
 class RosOfficeBots(Robot):
@@ -53,6 +61,8 @@ class RosOfficeBots(Robot):
         rospy.init_node("officebots")
         restore_logging()
         rospy.Subscriber("cmd_vel", Twist, self.on_cmd_vel)
+
+        self.supports_camera = True  # will be automatically set to false if the game reports no camera support
 
         self.cv_bridge = CvBridge()
         self.br = tf.TransformBroadcaster()
@@ -88,6 +98,147 @@ class RosOfficeBots(Robot):
 
         self.last = time.time()
 
+        self.humans = {}
+        self.face_tracked_pub = rospy.Publisher(
+            f"/humans/faces/tracked", IdsList, queue_size=1
+        )
+        self.body_tracked_pub = rospy.Publisher(
+            f"/humans/bodies/tracked", IdsList, queue_size=1
+        )
+        self.voices_tracked_pub = rospy.Publisher(
+            f"/humans/voices/tracked", IdsList, queue_size=1
+        )
+        self.person_tracked_pub = rospy.Publisher(
+            f"/humans/persons/tracked", IdsList, queue_size=1
+        )
+        self.person_known_pub = rospy.Publisher(
+            f"/humans/persons/known", IdsList, queue_size=1
+        )
+
+        self.voices = {}
+
+    def add_human(self, name):
+        person_id = "person_" + random_id()
+
+        face_id_pub = rospy.Publisher(
+            f"/humans/persons/{person_id}/face_id", String, queue_size=1
+        )
+        body_id_pub = rospy.Publisher(
+            f"/humans/persons/{person_id}/body_id", String, queue_size=1
+        )
+        voice_id_pub = rospy.Publisher(
+            f"/humans/persons/{person_id}/voice_id", String, queue_size=1
+        )
+
+        name_pub = rospy.Publisher(
+            f"/humans/persons/{person_id}/name", String, queue_size=1, latch=True
+        )
+
+        self.humans[name] = {
+            "id": person_id,
+            "visible": False,
+            "face_id_pub": face_id_pub,
+            "body_id_pub": body_id_pub,
+            "voice_id_pub": voice_id_pub,
+            "name_pub": name_pub,
+        }
+
+        return person_id
+
+    def add_voice(self):
+        voice_id = "voice_" + random_id()
+
+        speech_pub = rospy.Publisher(
+            f"/humans/voices/{voice_id}/speech", LiveSpeech, queue_size=1
+        )
+
+        self.voices[voice_id] = {"speech_pub": speech_pub}
+
+        return voice_id
+
+    def remove_human(self, name):
+        if name not in self.humans:
+            return
+
+        p = self.humans[name]
+
+        # unregister all ROS publishers
+        for _, v in p:
+            if hasattr(v, "unregister"):
+                v.unregister()
+
+        del self.humans[name]
+
+    def update_humans(self, seen_humans):
+
+        seen_names = [p[0] for p in seen_humans]
+
+        for name in seen_names:
+            if name not in self.humans:
+                self.add_human(name)
+
+            # the human is either new or just re-appeared
+            if not self.humans[name]["visible"]:
+                self.humans[name]["visible"] = True
+                self.humans[name]["face"] = "face_" + random_id()
+
+        not_visible_anymore = []
+
+        for name in self.humans.keys():
+            if name not in seen_names:
+                not_visible_anymore.append(name)
+
+        for name in not_visible_anymore:
+            self.humans[name]["visible"] = False
+            self.humans[name]["face"] = ""
+            self.humans[name]["body"] = ""
+
+    def publish_humans(self):
+
+        faces_list = IdsList()
+        bodies_list = IdsList()
+        voices_list = IdsList()
+        tracked_persons_list = IdsList()
+        known_persons_list = IdsList()
+
+        for name, p in self.humans.items():
+
+            known_persons_list.ids.append(p["id"])
+
+            if p["visible"]:
+                tracked_persons_list.ids.append(p["id"])
+
+            msg = String()
+            if "face" in p and p["face"] != "":
+                faces_list.ids.append(p["face"])
+                msg.data = p["face"]
+            # else, no face -> publish empty face id
+            p["face_id_pub"].publish(msg)
+
+            msg = String()
+            if "body" in p and p["body"] != "":
+                bodies_list.ids.append(p["body"])
+                msg.data = p["body"]
+            # else, no body -> publish empty body id
+            p["body_id_pub"].publish(msg)
+
+            msg = String()
+            if "voice" in p and p["voice"] != "":
+                voices_list.ids.append(p["voice"])
+                msg.data = p["voice"]
+            # else, no voice -> publish empty voice id
+            p["voice_id_pub"].publish(msg)
+
+            msg = String()
+            msg.data = name
+            p["name_pub"].publish(msg)
+
+        self.face_tracked_pub.publish(faces_list)
+        self.body_tracked_pub.publish(bodies_list)
+        self.voices_tracked_pub.publish(voices_list)
+        self.person_tracked_pub.publish(tracked_persons_list)
+        self.person_known_pub.publish(known_persons_list)
+
     async def run(self):
         res = await self.execute([robot_name, "create"])
         if res[0] != self.OK:
@@ -99,13 +250,24 @@ class RosOfficeBots(Robot):
 
         # simply keeps python from exiting until this node is stopped
         while not rospy.is_shutdown():
-            status, jpg_data = await self.execute([robot_name, "export-camera"])
-            # await asyncio.sleep(0.1)
-            array = np.asarray(bytearray(jpg_data), dtype=np.uint8)
-            image = cv2.imdecode(array, cv2.IMREAD_COLOR)
-            image_msg = self.cv_bridge.cv2_to_imgmsg(image, encoding="passthrough")
-            rospy.logwarn("publishing image")
-            self.image_pub.publish(image_msg)
+            if self.supports_camera:
+                status, jpg_data = await self.execute([robot_name, "export-camera"])
+                if status == Robot.OK:
+                    # await asyncio.sleep(0.1)
+                    array = np.asarray(bytearray(jpg_data), dtype=np.uint8)
+                    image = cv2.imdecode(array, cv2.IMREAD_COLOR)
+                    image_msg = self.cv_bridge.cv2_to_imgmsg(
+                        image, encoding="passthrough"
+                    )
+                    rospy.logwarn("publishing image")
+                    self.image_pub.publish(image_msg)
+                else:
+                    if "Unknown command" in jpg_data:
+                        self.supports_camera = False
+
+            status, humans = await self.execute([robot_name, "get-humans"])
+            if status == Robot.OK:
+                self.update_humans(humans)
 
         self.stop()
         logger.info("Bye")
@@ -141,6 +303,25 @@ class RosOfficeBots(Robot):
         self.scan_msg.header.stamp = rospy.Time.now()
 
         self.scan_pub.publish(self.scan_msg)
+
+        speech = data["speech_heard"]
+        if speech:
+            text, name = speech
+
+            if name not in self.humans:
+                self.add_human(name)
+
+            if "voice" not in self.humans[name] or (not self.humans[name]["voice"]):
+
+                voice_id = self.add_voice()
+                self.humans[name]["voice"] = voice_id
+
+            voice_id = self.humans[name]["voice"]
+            speech_msg = LiveSpeech()
+            speech_msg.final = text
+            self.voices[voice_id]["speech_pub"].publish(speech_msg)
+
+        self.publish_humans()
 
     def on_cmd_vel(self, twist):
         x = twist.linear.x
