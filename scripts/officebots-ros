@@ -12,7 +12,7 @@ from officebots import Robot
 
 officebots_logger = logging.getLogger("officebots")
 
-from math import cos, sin, pi, floor, sqrt
+from math import pi
 
 import cv2
 import numpy as np
@@ -29,6 +29,7 @@ import random
 
 import tf
 
+OPTICAL_FRAME_ROTATION = tf.transformations.quaternion_from_euler(-pi / 2, 0, -pi / 2)
 
 argv = rospy.myargv(argv=sys.argv)
 
@@ -171,26 +172,32 @@ class RosOfficeBots(Robot):
 
     def update_humans(self, seen_humans):
 
-        seen_names = [p[0] for p in seen_humans]
+        seen = {p[0]: p[1:] for p in seen_humans}
 
-        for name in seen_names:
+        for name in seen.keys():
             if name not in self.humans:
                 self.add_human(name)
 
             # the human is either new or just re-appeared
             if not self.humans[name]["visible"]:
                 self.humans[name]["visible"] = True
-                self.humans[name]["face"] = "face_" + random_id()
+                face_id = random_id()
+                self.humans[name]["face"] = "face_" + face_id
+                self.humans[name]["gaze"] = "gaze_" + face_id
+
+            self.humans[name]["pos"] = seen[name][0:3]
+            self.humans[name]["face_transform"] = seen[name][3:9]
 
         not_visible_anymore = []
 
         for name in self.humans.keys():
-            if name not in seen_names:
+            if name not in seen.keys():
                 not_visible_anymore.append(name)
 
         for name in not_visible_anymore:
             self.humans[name]["visible"] = False
             self.humans[name]["face"] = ""
+            self.humans[name]["gaze"] = ""
             self.humans[name]["body"] = ""
 
     def publish_humans(self):
@@ -205,6 +212,19 @@ class RosOfficeBots(Robot):
 
             known_persons_list.ids.append(p["id"])
 
+            x, y, theta = p["pos"]
+
+            # for 'known' persons (even if not currently visible), always
+            # publish the map <-> person transform
+            qx, qy, qz, qw = tf.transformations.quaternion_from_euler(0, 0, theta)
+            self.br.sendTransform(
+                (x, y, 0),
+                (qx, qy, qz, qw),
+                rospy.Time.now(),
+                p["id"],
+                "map",
+            )
+
             if p["visible"]:
                 tracked_persons_list.ids.append(p["id"])
 
@@ -212,6 +232,25 @@ class RosOfficeBots(Robot):
             if "face" in p and p["face"] != "":
                 faces_list.ids.append(p["face"])
                 msg.data = p["face"]
+
+                x, y, z, rx, ry, rz = p["face_transform"]
+                # publish the 'face' and 'gaze' tf frames
+                qx, qy, qz, qw = tf.transformations.quaternion_from_euler(rx, ry, rz)
+                self.br.sendTransform(
+                    (x, y, z),
+                    (qx, qy, qz, qw),
+                    rospy.Time.now(),
+                    p["face"],
+                    "map",
+                )
+                # gaze follows the optical frame convention: z-forward
+                self.br.sendTransform(
+                    (0, 0, 0),
+                    OPTICAL_FRAME_ROTATION,
+                    rospy.Time.now(),
+                    p["gaze"],
+                    p["face"],
+                )
             # else, no face -> publish empty face id
             p["face_id_pub"].publish(msg)
 
@@ -294,7 +333,7 @@ class RosOfficeBots(Robot):
 
         self.odom_pub.publish(self.odom_msg)
 
-        self.br.sendTransform((0, 0, 0), (0, 0, 0, 1), rospy.Time.now(), "map", "odom")
+        self.br.sendTransform((0, 0, 0), (0, 0, 0, 1), rospy.Time.now(), "odom", "map")
 
         self.br.sendTransform(
             (x, y, 0), (qx, qy, qz, qw), rospy.Time.now(), self.base_frame, "odom"
