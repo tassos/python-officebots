@@ -3,7 +3,6 @@
 import logging
 
 logger = logging.getLogger(f"rosout.{__name__}")
-
 import sys
 import asyncio
 import time
@@ -56,6 +55,7 @@ def restore_logging():
 class RosOfficeBots(Robot):
 
     base_frame = "base_link"
+    sellion_frame = "sellion_link"
 
     def __init__(self):
         super().__init__()
@@ -188,8 +188,7 @@ class RosOfficeBots(Robot):
             if not self.humans[name]["visible"]:
                 self.humans[name]["visible"] = True
                 face_id = random_id()
-                self.humans[name]["face"] = "face_" + face_id
-                self.humans[name]["gaze"] = "gaze_" + face_id
+                self.humans[name]["face"] = face_id
 
             self.humans[name]["pos"] = seen[name][0:3]
             self.humans[name]["face_transform"] = seen[name][3:9]
@@ -246,7 +245,7 @@ class RosOfficeBots(Robot):
                     (x, y, z),
                     (qx, qy, qz, qw),
                     rospy.Time.now(),
-                    p["face"],
+                    "face_" + p["face"],
                     "map",
                 )
                 # gaze follows the optical frame convention: z-forward
@@ -254,8 +253,8 @@ class RosOfficeBots(Robot):
                     (0, 0, 0),
                     OPTICAL_FRAME_ROTATION,
                     rospy.Time.now(),
-                    p["gaze"],
-                    p["face"],
+                    "gaze_" + p["face"],
+                    "face_" + p["face"],
                 )
             # else, no face -> publish empty face id
             p["face_id_pub"].publish(msg)
@@ -343,6 +342,13 @@ class RosOfficeBots(Robot):
 
         self.br.sendTransform(
             (x, y, 0), (qx, qy, qz, qw), rospy.Time.now(), self.base_frame, "odom"
+        )
+        self.br.sendTransform(
+            (0, 0, 1.6),
+            (0, 0, 0, 1),
+            rospy.Time.now(),
+            self.sellion_frame,
+            self.base_frame,
         )
 
         self.scan_msg.scan_time = dt
