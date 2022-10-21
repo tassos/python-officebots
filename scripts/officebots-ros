@@ -118,8 +118,14 @@ class RosOfficeBots(Robot):
 
         self.voices = {}
 
+    def safe_name(self, name):
+        for c in " -,.'\";+_":
+            name = name.replace(c, "")
+        return name.lower()
+
     def add_human(self, name):
-        person_id = "person_" + random_id()
+        # person_id = "person_" + random_id()
+        person_id = "person_" + self.safe_name(name)
 
         face_id_pub = rospy.Publisher(
             f"/humans/persons/{person_id}/face_id", String, queue_size=1
