@@ -6,6 +6,7 @@ logger = logging.getLogger(f"rosout.{__name__}")
 import sys
 import asyncio
 import time
+import base64
 
 from officebots import Robot
 
@@ -63,6 +64,8 @@ class RosOfficeBots(Robot):
         restore_logging()
         rospy.Subscriber("cmd_vel", Twist, self.on_cmd_vel)
         rospy.Subscriber("move_base_simple/goal", PoseStamped, self.on_nav_goal)
+        rospy.Subscriber("screen/raw_image", Image, self.on_screen_image)
+        rospy.Subscriber("say", String, self.on_say)
 
         self.supports_camera = True  # will be automatically set to false if the game reports no camera support
 
@@ -395,6 +398,21 @@ class RosOfficeBots(Robot):
         y = pose.pose.position.y
 
         self._event_loop.create_task(self.execute([robot_name, "navigate-to", [x, y]]))
+
+    def on_screen_image(self, image):
+
+        cv_img = self.cv_bridge.imgmsg_to_cv2(image, desired_encoding="passthrough")
+
+        cv_img = cv2.resize(cv_img, (320, 240))
+        _, buf = cv2.imencode(".jpg", cv_img)
+        b64 = base64.b64encode(buf).decode("ascii")
+        rospy.logdebug("Sending image size: %skb" % (len(b64) / 1024))
+
+        self._event_loop.create_task(self.execute([robot_name, "set-screen", [b64]]))
+
+    def on_say(self, msg):
+
+        self._event_loop.create_task(self.execute([robot_name, "say", [msg.data]]))
 
 
 if __name__ == "__main__":
