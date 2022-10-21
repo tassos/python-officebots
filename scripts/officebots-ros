@@ -18,7 +18,7 @@ import numpy as np
 from cv_bridge import CvBridge
 
 import rospy
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, PoseStamped
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import LaserScan, Image
 from hri_msgs.msg import IdsList, LiveSpeech
@@ -62,6 +62,7 @@ class RosOfficeBots(Robot):
         rospy.init_node("officebots")
         restore_logging()
         rospy.Subscriber("cmd_vel", Twist, self.on_cmd_vel)
+        rospy.Subscriber("move_base_simple/goal", PoseStamped, self.on_nav_goal)
 
         self.supports_camera = True  # will be automatically set to false if the game reports no camera support
 
@@ -382,6 +383,18 @@ class RosOfficeBots(Robot):
         w = twist.angular.z
 
         self._event_loop.create_task(self.execute([robot_name, "cmd-vel", [x, w]]))
+
+    def on_nav_goal(self, pose):
+        if pose.header.frame_id != "map":
+            rospy.logwarn(
+                "The navigation goal PoseStamped must currently be set in the 'map' reference frame"
+            )
+            return
+
+        x = pose.pose.position.x
+        y = pose.pose.position.y
+
+        self._event_loop.create_task(self.execute([robot_name, "navigate-to", [x, y]]))
 
 
 if __name__ == "__main__":
