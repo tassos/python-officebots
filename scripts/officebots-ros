@@ -157,7 +157,7 @@ class RosOfficeBots(Robot):
         return person_id
 
     def add_voice(self):
-        voice_id = "voice_" + random_id()
+        voice_id = random_id()
 
         speech_pub = rospy.Publisher(
             f"/humans/voices/{voice_id}/speech", LiveSpeech, queue_size=1
@@ -221,18 +221,19 @@ class RosOfficeBots(Robot):
 
             known_persons_list.ids.append(p["id"])
 
-            x, y, theta = p["pos"]
+            if "pos" in p:
+                x, y, theta = p["pos"]
 
-            # for 'known' persons (even if not currently visible), always
-            # publish the map <-> person transform
-            qx, qy, qz, qw = tf.transformations.quaternion_from_euler(0, 0, theta)
-            self.br.sendTransform(
-                (x, y, 0),
-                (qx, qy, qz, qw),
-                rospy.Time.now(),
-                p["id"],
-                "map",
-            )
+                # for 'known' persons (even if not currently visible), always
+                # publish the map <-> person transform
+                qx, qy, qz, qw = tf.transformations.quaternion_from_euler(0, 0, theta)
+                self.br.sendTransform(
+                    (x, y, 0),
+                    (qx, qy, qz, qw),
+                    rospy.Time.now(),
+                    p["id"],
+                    "map",
+                )
 
             if p["visible"]:
                 tracked_persons_list.ids.append(p["id"])
