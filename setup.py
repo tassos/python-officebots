@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="officebots",
-    version="0.3.0",
+    version="0.3.1",
     author="Séverin Lemaignan",
     author_email="severin.lemaignan@brl.ac.uk",
     description="Python API for the OfficeBots game",
