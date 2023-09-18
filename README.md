@@ -28,6 +28,30 @@ Usage
 Check examples in the `examples/` directory. You can start with the simple
 `cmdline.py`.
 
+### List of available commands
+
+These commands can all be used with the `cmdline.py` script.
+For instance: `python3 examples/cmdline.py set-pos 1.3 2.3 0.5` will position
+the robot to coordinate (1.3m, 2.3m) and orientation 0.5 rad.
+
+- `cmd-vel <linear velocity> <angular velocity>`: sets the velocity of the robot
+- `set-pos <x> <y> <theta>`: sets the position of the robot (in meters and
+  radians)
+- `navigate-to <x> <y>`: navigate to the provided point (note that the final
+  orientation can not be controlled)
+- `stop`: stops the robot if moving
+- `say <message>`
+- `get-pos`: returns the current position of the robot
+- `set-color <colour>`: sets the colour of the robot. Parameter must be one of
+  `black`, `blue`, `yellow`, `green`, `red`, `white`, `purple`, `beige`.
+- `set-screen <base64-encoded JPG>`: set the image on the robot's screen. See
+  [the source of cmdline.py](examples/cmdline.py) for an example of how to
+  create the base64 JPG image.
+- `get_humans`: returns the humans currently visible to the robot. For each of
+  them, returns the name, (`x`, `y`, `theta`) position and the 6D head position
+  (useful to compute eg the gaze direction)
+
+
 ROS support
 -----------
 
