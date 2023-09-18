@@ -20,5 +20,6 @@ setuptools.setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
+    requires=["websockets", "opencv"],
     python_requires=">=3.6",
 )
