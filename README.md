@@ -52,11 +52,11 @@ the robot to coordinate (1.3m, 2.3m) and orientation 0.5 rad.
   (useful to compute eg the gaze direction)
 
 
-ROS support
+ROS and ROS2 support
 -----------
 
-This Python package also provides a complete ROS bridge to the simulator,
-supporting:
+This Python package also provides a complete ROS and ROS2 bridge to the simulator,
+supporting. There are two seperate scripts in the `scripts` folder that you can just execute. If you wish to run the ROS2 bridge node as a package, you can get the packaged version from [here](https://gitlab.utcluj.ro/hri/officebots_ros2):
 
 - `/cmd_vel` to move the robot
 - laser scan simulation (`/scan`)
